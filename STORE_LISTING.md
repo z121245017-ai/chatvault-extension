@@ -1,40 +1,49 @@
-# Chrome Web Store Listing — ChatVault
+# Chrome Web Store Listing — ChatVault 1.1.0
 
-## Extension Name (61 / 75 chars)
-`ChatVault - Export ChatGPT, DeepSeek & Claude to Markdown/PDF`
+> 范围说明：1.1.0 只支持 DeepSeek（`https://chat.deepseek.com/*`）导出 Markdown / JSON。不含打印 / PDF，不支持其它平台。
 
-## Short Description (EN)
-`100% local-first exporter for ChatGPT, DeepSeek, Claude & Gemini. Preserves <think> blocks, KaTeX LaTeX & code fences with zero watermarks.`
+## Extension Name（34 / 75）
+`ChatVault - DeepSeek 对话导出 Markdown`
 
-## Short Description (ZH)
-`100% 本地离线导出 ChatGPT/DeepSeek/Claude 为 Markdown/PDF：完整保留 <think> 思考过程、KaTeX 公式与代码围栏，零水印零外连。`
+## Short Description（ZH，≤132）
+`把 DeepSeek 对话导出为 Markdown，保留思考过程、公式和代码块。导出前显示读取条数与完整性，不完整会明确标注。本地运行，不上传数据。`
 
-## Detailed Description (Bilingual EN / ZH)
+## Short Description（EN, reference）
+`Export DeepSeek chats to Markdown with reasoning, formulas and code blocks. Shows message count and completeness before export; partial reads are labeled. Runs locally.`
 
-Export your AI conversations cleanly without virtual-scroll truncation, broken LaTeX, mangled DeepSeek `<think>` blocks, or forced watermarks and login walls.
+## Detailed Description（中文）
 
-### Why ChatVault?
-- **DeepSeek `<think>` & Claude Thinking Support**: Wraps reasoning traces in clean collapsible `<details><summary>Reasoning</summary>...</details>` blocks—or strips them cleanly with one toggle.
-- **Lossless KaTeX / MathJax LaTeX Restoration**: Reads original `<annotation encoding="application/x-tex">` nodes so `$...$` and `$$...$$` formulas paste directly into Obsidian, Notion, and Typora.
-- **Exact Fenced Code Languages & GFM Tables**: Keeps `python`, `ts`, `sql`, `bash` fence tags intact without "Copy code" button noise.
-- **Scroll Collection for Long Threads**: Safely traverses long virtualized threads to avoid missing early turns.
-- **Clean Watermark-Free PDF Print**: Built-in `@media print` view hides sidebars and composers for instant Save-as-PDF.
-- **Obsidian / Notion YAML Frontmatter**: One-click toggle for title, source platform, URL, timestamp, and tags.
+ChatVault 把 DeepSeek 网页版的对话保存成 Markdown 文件，方便放进 Obsidian、Typora 或笔记库归档。
 
-### 核心亮点（中文）
-- **100% 本地离线（`connect-src 'none'`）**：不登录、不联网、不上传对话数据，无任何广告与水印。
-- **DeepSeek `<think>` 与公式无损**：思考过程折叠导出/一键剥离，KaTeX 源码还原 `$...$` / `$$...$$`。
-- **一键导出 Markdown / JSON / 复制 / 纯净 PDF 打印**。
+**读到哪儿，就承诺到哪儿**
+- 导出前先显示：来源页面、读取到的条数、首条和末条内容片段。
+- 状态分四种：「完整」「部分导出」「已读取当前范围」「未找到对话」。只有从对话顶部滚到底部、每一屏都能和上一屏核对上，才标「完整」。
+- 不完整时，导出的文件开头会写明原因，文件头信息（YAML）和文件末尾也会记录状态和条数，离开插件也能辨认。
+- 过期或无效的分享页会直接提示「未找到对话」，不会把整页文字当成一条消息导出。
 
-## Minimal Permission Justification (Chrome Web Store Review)
+**保留原始内容**
+- DeepSeek 思考过程可折叠保留，也可一键去掉。
+- 公式按原始 LaTeX 还原，代码块保留语言标记。
+- 内容相同的消息（比如多次发送「继续」）按原顺序保留，不会被合并。
+
+**本地运行**
+- 只在 chat.deepseek.com 页面上读取，不访问其它网站。
+- 不联网、不上传对话、无广告、无水印、不需要登录。
+- 对话内容不写入浏览器存储，只保存三个开关的偏好设置。
+
+## Permission Justification
 
 | Permission | Justification |
 | :--- | :--- |
-| `activeTab` | Only accesses the currently active tab when the user clicks the ChatVault extension icon to extract the visible conversation DOM locally. |
-| `scripting` | Injects the local extraction script on demand when the user triggers export on a generic or unsupported chat UI tab without requesting `<all_urls>`. |
-| `storage` | Stores user preferences locally in `chrome.storage.local` (YAML Frontmatter toggle, Reasoning toggle, Scroll-collect toggle, and Print view payload). |
+| `activeTab` | 用户点击扩展图标时，读取当前 DeepSeek 标签页中的对话。 |
+| `scripting` | 若页面在安装扩展前已打开、内容脚本尚未注入，仅在确认当前标签页是 `chat.deepseek.com` 后注入本地读取脚本。 |
+| `storage` | 仅保存三个开关偏好（文件头信息、思考过程、滚动校验）和打赏状态，不保存对话内容。 |
 
-## Privacy & Host Policy
-- `connect-src 'none'` enforced in `manifest.json`.
-- No remote analytics, no telemetry, no remote code execution.
+Content scripts run only on `https://chat.deepseek.com/*`.
+
+## Privacy
+- Extension pages enforce `connect-src 'none'`; no analytics, telemetry or remote code.
 - Privacy Policy URL: `https://z121245017-ai.github.io/chatvault-extension/privacy.html`
+
+## Store assets to refresh before resubmission
+- 旧截图包含多平台和打印功能，需要按 1.1.0 界面重新截图（已删除 `screenshot-3-print-pdf.png`）。

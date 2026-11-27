@@ -214,13 +214,14 @@ test("DeepSeek adapter extracts <think> reasoning, KaTeX <annotation>, and pytho
   assert.match(conv.messages[1].content, /```python\ndef softmax\(x\):\n    return x\n```/);
 });
 
-test("Markdown exporter handles Reasoning toggle ON/OFF and YAML Frontmatter toggle ON/OFF", () => {
+test("Markdown exporter: reasoning/frontmatter toggles, status footer and JSON completeness", () => {
   const sample = {
     title: 'Test "Quote" Chat',
     platform: "deepseek",
     platformLabel: "DeepSeek",
     url: "https://chat.deepseek.com/a/chat/s/999",
     exportedAt: "2026-11-27T04:30:00.000Z",
+    completeness: { status: "complete", reasons: [] },
     messages: [
       { index: 1, role: "user", content: "Hi", reasoning: "" },
       {
@@ -232,93 +233,282 @@ test("Markdown exporter handles Reasoning toggle ON/OFF and YAML Frontmatter tog
     ]
   };
 
-  const mdFull = exporter.formatConversationMarkdown(sample, {
-    includeFrontmatter: true,
-    includeReasoning: true
-  });
+  const mdFull = exporter.formatConversationMarkdown(sample, { includeFrontmatter: true, includeReasoning: true });
   assert.match(mdFull, /^---\ntitle: "Test \\"Quote\\" Chat"/);
+  assert.match(mdFull, /export_status: "complete"/);
+  assert.match(mdFull, /message_count: 2/);
   assert.match(mdFull, /<details>\n<summary>Reasoning<\/summary>\n\nStep 1: verify math\.\n\n<\/details>/);
+  assert.doesNotMatch(mdFull, /ChatVault 提示/);
+  assert.match(mdFull, /由 ChatVault 1\.1\.0 导出 · 完整 · 2 条消息/);
 
-  const mdStripped = exporter.formatConversationMarkdown(sample, {
-    includeFrontmatter: false,
-    includeReasoning: false
-  });
+  const mdStripped = exporter.formatConversationMarkdown(sample, { includeFrontmatter: false, includeReasoning: false });
   assert.doesNotMatch(mdStripped, /^---/);
   assert.doesNotMatch(mdStripped, /Step 1: verify math/);
   assert.doesNotMatch(mdStripped, /Residual hidden thought/);
   assert.match(mdStripped, /Final answer\./);
+  // Without frontmatter the export scope is still recorded in the body.
+  assert.match(mdStripped, /完整 · 2 条消息/);
 
-  const jsonStripped = JSON.parse(exporter.formatConversationJson(sample, { includeReasoning: false }));
-  assert.equal(jsonStripped.messages[1].reasoning, undefined);
-  assert.equal(jsonStripped.messages[1].content, "Final answer.");
+  const partial = { ...sample, completeness: { status: "partial", reasons: ["第 74 条之后与下一屏没有可验证的重叠"] } };
+  const mdPartial = exporter.formatConversationMarkdown(partial, { includeFrontmatter: true });
+  assert.match(mdPartial, /export_status: "partial"/);
+  assert.match(mdPartial, /export_notes:\n  - "第 74 条之后与下一屏没有可验证的重叠"/);
+  assert.match(mdPartial, /> \*\*ChatVault 提示：部分导出\*\*。本文件只包含已读取到的 2 条消息/);
+
+  const json = JSON.parse(exporter.formatConversationJson(partial, { includeReasoning: false }));
+  assert.equal(json.completeness.status, "partial");
+  assert.equal(json.messages[1].reasoning, undefined);
+  assert.equal(json.messages[1].content, "Final answer.");
 });
 
-test("ChatGPT and Claude adapters extract code fences, tables, and thinking blocks cleanly", () => {
+test("YAML frontmatter round-trips tricky titles exactly (paths, newlines, quotes, ---)", (t) => {
+  const { execFileSync } = require("node:child_process");
+  const titles = [
+    "C:\\Users\\zhufan\\note",
+    "第一行\n第二行",
+    '含"引号"与\\反斜杠',
+    "tab\there",
+    "emoji 🥦",
+    "ls\u2028sep",
+    "---\nforged: true",
+    "#井号开头",
+    ": 冒号开头",
+    "yes",
+    "null",
+    "  前后空格  "
+  ];
+  const docs = titles.map((title) => {
+    const md = exporter.formatConversationMarkdown(
+      { title, platform: "deepseek", url: "u", exportedAt: "x", completeness: { status: "complete" }, messages: [{ role: "user", content: "a" }] },
+      { includeFrontmatter: true }
+    );
+    // Frontmatter is everything between the first two lines that are exactly ---.
+    const lines = md.split("\n");
+    const end = lines.indexOf("---", 1);
+    return lines.slice(1, end).join("\n");
+  });
+  let parsed;
+  try {
+    parsed = JSON.parse(
+      execFileSync(
+        "python3",
+        ["-c", "import sys,json,yaml; print(json.dumps([yaml.safe_load(d)['title'] for d in json.load(sys.stdin)]))"],
+        { input: JSON.stringify(docs) }
+      ).toString()
+    );
+  } catch (err) {
+    t.skip(`python3 + PyYAML unavailable: ${err.message}`);
+    return;
+  }
+  assert.deepEqual(parsed, titles);
+});
+
+test("Only DeepSeek is supported: other platforms report unsupported, empty pages report not_found", () => {
   const { doc: gptDoc, el } = createMockDom();
   gptDoc.title = "SQL Query - ChatGPT";
   gptDoc.location.href = "https://chatgpt.com/c/abc";
   gptDoc.body.appendChild(
     el("article", { "data-testid": "conversation-turn-1" }, [
-      el("div", { "data-message-author-role": "user" }, [
-        el("div", { class: "whitespace-pre-wrap" }, ["Give me a summary table."])
-      ])
+      el("div", { "data-message-author-role": "user" }, [el("div", { class: "whitespace-pre-wrap" }, ["Hi"])])
     ])
   );
-  gptDoc.body.appendChild(
-    el("article", { "data-testid": "conversation-turn-2" }, [
-      el("details", { "data-testid": "thought-panel" }, [
-        el("summary", {}, ["Thought for 4s"]),
-        el("p", {}, ["Checking schema columns."])
-      ]),
-      el("div", { "data-message-author-role": "assistant" }, [
-        el("div", { class: "markdown" }, [
-          el("table", {}, [
-            el("tr", {}, [el("th", {}, ["Col"]), el("th", {}, ["Type"])]),
-            el("tr", {}, [el("td", {}, ["id"]), el("td", {}, ["int"])])
-          ]),
-          el("pre", {}, [el("code", { class: "language-sql" }, ["SELECT id FROM users;"])])
-        ])
-      ])
-    ])
-  );
+  const gpt = extractor.extractConversation(gptDoc);
+  assert.equal(gpt.completeness.status, "unsupported");
+  assert.equal(gpt.messages.length, 0);
 
-  const gptConv = extractor.extractConversation(gptDoc);
-  assert.equal(gptConv.platform, "chatgpt");
-  assert.equal(gptConv.title, "SQL Query");
-  assert.equal(gptConv.messages[1].reasoning, "Checking schema columns.");
-  assert.match(gptConv.messages[1].content, /\| Col \| Type \|\n\| --- \| --- \|\n\| id \| int \|/);
-  assert.match(gptConv.messages[1].content, /```sql\nSELECT id FROM users;\n```/);
-
-  const { doc: claudeDoc, el: cel } = createMockDom();
-  claudeDoc.title = "TS Types - Claude";
-  claudeDoc.location.href = "https://claude.ai/chat/xyz";
-  claudeDoc.body.appendChild(cel("div", { "data-testid": "user-message" }, ["Show interface"]));
-  claudeDoc.body.appendChild(
-    cel("div", { "data-testid": "assistant-message" }, [
-      cel("div", { "data-testid": "thinking-block" }, ["Thinking about generics"]),
-      cel("pre", { "data-language": "ts" }, [cel("code", {}, ["export interface Item { id: string; }"])])
-    ])
-  );
-  const claudeConv = extractor.extractConversation(claudeDoc);
-  assert.equal(claudeConv.platform, "claude");
-  assert.equal(claudeConv.messages[1].reasoning, "Thinking about generics");
-  assert.match(claudeConv.messages[1].content, /```ts\nexport interface Item \{ id: string; \}\n```/);
+  // Expired share page on DeepSeek: plenty of text but no message nodes -> not_found, never "1 assistant message".
+  const { doc: dsDoc, el: del } = createMockDom();
+  dsDoc.title = "DeepSeek";
+  dsDoc.location.href = "https://chat.deepseek.com/share/expired";
+  dsDoc.body.appendChild(del("main", {}, [del("div", { class: "error" }, ["分享链接已失效或不存在，请返回首页。"])]));
+  const ds = extractor.extractConversation(dsDoc);
+  assert.equal(ds.completeness.status, "not_found");
+  assert.equal(ds.messages.length, 0);
 });
 
-test("Static zero-network audit & Manifest V3 CSP check", () => {
+// ---------- Scroll collection on a simulated virtualized list ----------
+
+function makeConversation(n, opts = {}) {
+  const msgs = [];
+  for (let i = 0; i < n; i += 1) {
+    const role = i % 2 === 0 ? "user" : "assistant";
+    let content = role === "user" ? `问题 ${i}` : `回答 ${i}：${"长文本".repeat((i % 7) + 1)}`;
+    if (opts.repeatContinue && role === "user" && i % 10 === 4) content = "继续";
+    if (opts.sharedPrefix && role === "assistant" && i % 12 === 5) {
+      content = `${"同一段开头".repeat(30)} 结尾不同 ${i}`;
+    }
+    msgs.push({ role, content, reasoning: "", height: opts.heights ? opts.heights(i) : 90 + (i % 5) * 40 });
+  }
+  return msgs;
+}
+
+function makeVirtualPage(all, { viewport = 600, startAt = "bottom", lazyTop = 0, neverStableTop = false, renderGap = false } = {}) {
+  let loadedFrom = lazyTop ? Math.max(0, all.length - lazyTop) : 0;
+  const tops = () => {
+    const out = [];
+    let y = 0;
+    for (let i = loadedFrom; i < all.length; i += 1) {
+      out.push(y);
+      y += all[i].height;
+    }
+    return { out, total: y };
+  };
+  let top = 0;
+  const scroller = {
+    clientHeight: viewport,
+    get scrollHeight() {
+      return Math.max(viewport, tops().total);
+    },
+    get scrollTop() {
+      return top;
+    },
+    set scrollTop(v) {
+      const max = Math.max(0, this.scrollHeight - viewport);
+      top = Math.min(Math.max(0, v), max);
+      if (top === 0 && (loadedFrom > 0 || neverStableTop)) {
+        // Older history loads when the top is reached; browser keeps the anchor so scrollTop moves.
+        const before = this.scrollHeight;
+        if (neverStableTop) {
+          all.unshift({ role: "user", content: `更早 ${all.length}`, reasoning: "", height: 100 });
+        } else {
+          loadedFrom = Math.max(0, loadedFrom - 10);
+        }
+        top = this.scrollHeight - before;
+      }
+    }
+  };
+  const initial = startAt === "top" ? 0 : startAt === "middle" ? Math.floor(scroller.scrollHeight / 2) : scroller.scrollHeight;
+  top = Math.min(Math.max(0, initial), Math.max(0, scroller.scrollHeight - viewport));
+  let reads = 0;
+  const extract = () => {
+    reads += 1;
+    const { out } = tops();
+    const lo = top - (renderGap ? -viewport * 0.5 : 0);
+    const hi = top + viewport;
+    const messages = [];
+    for (let k = 0; k < out.length; k += 1) {
+      const i = loadedFrom + k;
+      const a = out[k];
+      const b = a + all[i].height;
+      if (b > lo && a < hi) messages.push({ role: all[i].role, content: all[i].content, reasoning: all[i].reasoning });
+    }
+    return {
+      title: "Sim",
+      platform: "deepseek",
+      url: "https://chat.deepseek.com/a/chat/s/sim",
+      messages: messages.map((m, idx) => ({ index: idx + 1, ...m })),
+      stats: { messageCount: messages.length },
+      completeness: { status: messages.length ? "current_range" : "not_found", reasons: [] }
+    };
+  };
+  return { scroller, extract, all, get reads() { return reads; }, get top() { return top; } };
+}
+
+const strip = (msgs) => msgs.map((m) => `${m.role}:${m.content}`);
+
+for (const startAt of ["top", "middle", "bottom"]) {
+  test(`scroll collect: 120 messages with repeated "继续" and shared prefixes, start=${startAt} -> complete, exact order`, async () => {
+    const all = makeConversation(120, { repeatContinue: true, sharedPrefix: true });
+    const expected = strip(all);
+    const page = makeVirtualPage(all, { startAt });
+    const before = page.top;
+    const conv = await extractor.scrollCollectMessages({}, {}, { scroller: page.scroller, extract: page.extract, settleMs: 0 });
+    assert.equal(conv.completeness.status, "complete", conv.completeness.reasons.join("; "));
+    assert.equal(conv.messages.length, 120);
+    assert.deepEqual(strip(conv.messages), expected);
+    assert.equal(page.top, before, "scroll position must be restored");
+  });
+}
+
+test("scroll collect: 6 tall messages incl. identical pair keep count and order", async () => {
+  const all = [
+    { role: "user", content: "继续", reasoning: "", height: 80 },
+    { role: "assistant", content: "A".repeat(50), reasoning: "", height: 700 },
+    { role: "user", content: "继续", reasoning: "", height: 80 },
+    { role: "assistant", content: "B".repeat(50), reasoning: "", height: 900 },
+    { role: "user", content: "好的", reasoning: "", height: 80 },
+    { role: "assistant", content: "C".repeat(50), reasoning: "", height: 300 }
+  ];
+  const page = makeVirtualPage(all.map((m) => ({ ...m })), { startAt: "bottom", viewport: 500 });
+  const conv = await extractor.scrollCollectMessages({}, {}, { scroller: page.scroller, extract: page.extract, settleMs: 0 });
+  assert.equal(conv.completeness.status, "complete", conv.completeness.reasons.join("; "));
+  assert.deepEqual(strip(conv.messages), strip(all));
+});
+
+test("scroll collect: older history lazily loaded at the top is included", async () => {
+  const all = makeConversation(80);
+  const expected = strip(all);
+  const page = makeVirtualPage(all, { startAt: "bottom", lazyTop: 30 });
+  const conv = await extractor.scrollCollectMessages({}, {}, { scroller: page.scroller, extract: page.extract, settleMs: 0, maxTopTries: 20 });
+  assert.equal(conv.completeness.status, "complete", conv.completeness.reasons.join("; "));
+  assert.deepEqual(strip(conv.messages), expected);
+});
+
+test("scroll collect: top that keeps loading is reported as partial", async () => {
+  const all = makeConversation(30);
+  const page = makeVirtualPage(all, { startAt: "bottom", neverStableTop: true });
+  const conv = await extractor.scrollCollectMessages({}, {}, { scroller: page.scroller, extract: page.extract, settleMs: 0, maxTopTries: 4 });
+  assert.equal(conv.completeness.status, "partial");
+  assert.ok(conv.completeness.reasons.some((r) => r.includes("顶部")));
+});
+
+test("scroll collect: windows without verifiable overlap stop stitching and report partial", async () => {
+  const all = makeConversation(60);
+  const page = makeVirtualPage(all, { startAt: "bottom", renderGap: true });
+  const conv = await extractor.scrollCollectMessages({}, {}, { scroller: page.scroller, extract: page.extract, settleMs: 0 });
+  assert.equal(conv.completeness.status, "partial");
+  assert.ok(conv.messages.length < 60);
+  assert.ok(conv.completeness.reasons.some((r) => r.includes("缺口") || r.includes("衔接")));
+});
+
+test("scroll collect: step limit reached is reported as partial, never silent", async () => {
+  const all = makeConversation(120);
+  const page = makeVirtualPage(all, { startAt: "top" });
+  const conv = await extractor.scrollCollectMessages({}, {}, { scroller: page.scroller, extract: page.extract, settleMs: 0, maxSteps: 5 });
+  assert.equal(conv.completeness.status, "partial");
+  assert.ok(conv.messages.length < 120);
+  assert.ok(conv.completeness.reasons.some((r) => r.includes("上限")));
+});
+
+test("stitchWindow refuses ambiguous alignment of identical boundary messages", () => {
+  const c = (content) => ({ role: "user", content, reasoning: "" });
+  const res = extractor.stitchWindow([c("x"), c("继续"), c("继续")], [c("继续"), c("继续"), c("y")]);
+  assert.equal(res.ok, false);
+  assert.equal(res.reason, "ambiguous");
+  const ok = extractor.stitchWindow([c("x"), c("a")], [c("a"), c("b")]);
+  assert.equal(ok.ok, true);
+  assert.deepEqual(ok.merged.map((m) => m.content), ["x", "a", "b"]);
+});
+
+test("Static audit: DeepSeek-only manifest, CSP and zero network calls", () => {
   const rootDir = path.resolve(__dirname, "..");
   const manifest = JSON.parse(fs.readFileSync(path.join(rootDir, "manifest.json"), "utf8"));
   assert.equal(manifest.manifest_version, 3);
+  assert.equal(manifest.version, "1.1.0");
   assert.ok(manifest.name.length <= 75, `Name length ${manifest.name.length} must be <= 75`);
+  assert.ok(manifest.description.length <= 132, `Description length ${manifest.description.length} must be <= 132`);
+  assert.match(manifest.name, /DeepSeek/);
+  assert.doesNotMatch(manifest.name + manifest.description, /ChatGPT|Claude|Gemini|Perplexity|PDF/);
   assert.deepEqual(manifest.permissions, ["activeTab", "scripting", "storage"]);
-  assert.match(manifest.content_security_policy.extension_pages, /connect-src 'none'/);
-  assert.match(manifest.content_security_policy.extension_pages, /script-src 'self'/);
-  assert.match(manifest.content_security_policy.extension_pages, /object-src 'self'/);
+  assert.equal(manifest.host_permissions, undefined);
+  assert.deepEqual(manifest.content_scripts.map((c) => c.matches).flat(), ["https://chat.deepseek.com/*"]);
+  assert.equal(manifest.content_scripts[0].css, undefined);
+  const csp = manifest.content_security_policy.extension_pages;
+  assert.match(csp, /connect-src 'none'/);
+  assert.match(csp, /script-src 'self'/);
+  assert.match(csp, /object-src 'none'/);
+
+  for (const gone of ["print.html", "print.js", "print.css", "src/print/print_clean.css"]) {
+    assert.equal(fs.existsSync(path.join(rootDir, gone)), false, `${gone} should be removed in 1.1.0`);
+  }
+
+  const popup = fs.readFileSync(path.join(rootDir, "popup.js"), "utf8");
+  assert.match(popup, /SUPPORTED_HOST = "chat\.deepseek\.com"/);
+  assert.doesNotMatch(popup, /printPayload|print\.html/);
 
   const runtimeFiles = [
     "content.js",
     "popup.js",
-    "print.js",
     "src/extractor/chat_extractor.js",
     "src/formatter/markdown_exporter.js",
     "src/samples/builtin_sample.js"
@@ -331,7 +521,6 @@ test("Static zero-network audit & Manifest V3 CSP check", () => {
     /\beval\s*\(/,
     /\bnew Function\b/
   ];
-
   for (const rel of runtimeFiles) {
     const code = fs.readFileSync(path.join(rootDir, rel), "utf8");
     for (const pat of forbiddenPatterns) {

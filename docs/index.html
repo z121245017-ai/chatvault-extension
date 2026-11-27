@@ -3,7 +3,7 @@
 <head>
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-  <title>ChatVault — Local-First ChatGPT, DeepSeek &amp; Claude Exporter</title>
+  <title>ChatVault — DeepSeek 对话导出 Markdown</title>
   <link rel="stylesheet" href="style.css" />
 </head>
 <body>
@@ -11,13 +11,13 @@
     <div class="container hero-inner">
       <div class="badge-row">
         <span class="pill pill-emerald">Manifest V3</span>
-        <span class="pill pill-blue">connect-src 'none' · 100% Local</span>
-        <span class="pill pill-amber">Zero Watermarks · $0 Forever</span>
+        <span class="pill pill-blue">本地运行 · 不上传数据</span>
+        <span class="pill pill-amber">只支持 DeepSeek</span>
       </div>
       <h1>ChatVault</h1>
       <p class="subtitle">
-        无损导出 ChatGPT、DeepSeek、Claude 与 Gemini 对话为 Obsidian Markdown、JSON 与纯净 PDF。<br />
-        修复虚拟滚动长对话截断、DeepSeek <code>&lt;think&gt;</code> 错乱、KaTeX 公式丢失与导出水印。
+        把 DeepSeek 对话导出为 Markdown / JSON，保留思考过程、公式和代码块。<br />
+        导出前显示读取条数和完整性；读不全时明确标注「部分导出」，不会悄悄少导。
       </p>
       <div class="hero-actions">
         <a
@@ -43,12 +43,12 @@
         <p>直接读取 <code>&lt;annotation encoding="application/x-tex"&gt;</code>，完整保留 <code>$...$</code> 与 <code>$$...$$</code> 源码。</p>
       </article>
       <article class="feature-card">
-        <h3>防虚拟滚动截断 + 精确语言围栏</h3>
-        <p>内置长对话滚动采集与语言标签识别（<code>python</code> / <code>ts</code> / <code>sql</code>），表格与列表无损转换。</p>
+        <h3>读到哪儿，就承诺到哪儿</h3>
+        <p>从顶部逐屏核对到底部才标「完整」；内容相同的消息按原顺序保留。代码块保留语言标记。</p>
       </article>
       <article class="feature-card">
-        <h3>纯净 PDF 打印 + Obsidian YAML</h3>
-        <p><code>@media print</code> 自动隐藏侧边栏与输入框，零水印另存为 PDF；可选写入 Obsidian / Notion Frontmatter。</p>
+        <h3>文件自带导出范围</h3>
+        <p>文件头信息（YAML）和文末记录状态、条数与导出时间，文件离开插件也能辨认是否完整。</p>
       </article>
     </section>
 
@@ -61,8 +61,6 @@
         <div class="demo-controls">
           <select id="demoPlatform" class="select">
             <option value="deepseek">DeepSeek (&lt;think&gt; + KaTeX + Python)</option>
-            <option value="chatgpt">ChatGPT (o1 Thought + Table + SQL)</option>
-            <option value="claude">Claude (Thinking + TypeScript)</option>
           </select>
           <label class="check-label"><input type="checkbox" id="demoFrontmatter" checked /> YAML Frontmatter</label>
           <label class="check-label"><input type="checkbox" id="demoReasoning" checked /> Include Reasoning</label>

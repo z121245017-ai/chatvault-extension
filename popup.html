@@ -3,7 +3,7 @@
 <head>
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-  <title>ChatVault - AI 对话无损导出</title>
+  <title>ChatVault - DeepSeek 对话导出</title>
   <link rel="stylesheet" href="popup.css" />
 </head>
 <body>
@@ -12,13 +12,13 @@
       <div class="brand">
         <img src="icons/icon48.png" alt="ChatVault" class="brand-icon" width="28" height="28" />
         <div>
-          <h1 class="brand-title">ChatVault <span class="brand-tag">v1.0</span></h1>
-          <p class="brand-sub">ChatGPT · DeepSeek · Claude 无损导出</p>
+          <h1 class="brand-title">ChatVault <span class="brand-tag">v1.1</span></h1>
+          <p class="brand-sub">DeepSeek 对话导出 Markdown</p>
         </div>
       </div>
       <div class="header-actions">
         <button type="button" id="btnOpenCoffeeTop" class="coffee-top-link" title="支持 ChatVault 免费持续维护">☕ 请作者喝咖啡</button>
-        <span class="privacy-pill" title="connect-src 'none' · 零外部请求">100% 本地</span>
+        <span class="privacy-pill" title="connect-src 'none' · 不向任何服务器发送数据">本地运行</span>
       </div>
     </header>
 
@@ -30,11 +30,16 @@
         <span id="convTitle" class="conv-title" title="当前对话标题">等待读取对话...</span>
       </div>
       <div class="stats-row">
+        <span id="statusPill" class="status-pill" data-status="pending">读取中</span>
         <span class="stat-chip" id="statMessages">0 条消息</span>
         <span class="stat-chip" id="statReasoning">0 思考块</span>
-        <span class="stat-chip" id="statFormulas">0 公式</span>
-        <span class="stat-chip" id="statCode">0 代码块</span>
       </div>
+      <dl class="range-list" id="rangeList">
+        <div class="range-row"><dt>来源</dt><dd id="rangeSource">-</dd></div>
+        <div class="range-row"><dt>首条</dt><dd id="rangeFirst">-</dd></div>
+        <div class="range-row"><dt>末条</dt><dd id="rangeLast">-</dd></div>
+      </dl>
+      <ul class="range-reasons is-hidden" id="rangeReasons"></ul>
     </section>
 
     <section class="cta-panel">
@@ -42,17 +47,17 @@
         一键导出 Markdown
       </button>
       <div class="secondary-grid">
-        <button type="button" id="btnPrintPdf" class="btn btn-secondary">纯净 PDF 打印</button>
         <button type="button" id="btnCopyMd" class="btn btn-ghost">复制 Markdown</button>
         <button type="button" id="btnExportJson" class="btn btn-ghost">导出 JSON</button>
       </div>
     </section>
 
-    <section class="options-card">
+    <details class="options-card">
+      <summary class="options-summary">导出选项</summary>
       <label class="toggle-row" for="toggleFrontmatter">
         <span class="toggle-copy">
-          <strong>Obsidian YAML Frontmatter</strong>
-          <small>写入标题、来源平台、时间与标签元数据</small>
+          <strong>写入文件头信息（YAML）</strong>
+          <small>标题、来源、导出时间、条数与完整性状态</small>
         </span>
         <input type="checkbox" id="toggleFrontmatter" checked />
       </label>
@@ -65,22 +70,22 @@
       </label>
       <label class="toggle-row" for="toggleScrollCollect">
         <span class="toggle-copy">
-          <strong>滚动全量采集长对话</strong>
-          <small>自动遍历虚拟滚动列表，防止长对话截断</small>
+          <strong>滚动校验完整性</strong>
+          <small>从顶部滚到底逐屏核对；关闭后只读取当前已加载的部分</small>
         </span>
         <input type="checkbox" id="toggleScrollCollect" checked />
       </label>
-    </section>
+    </details>
 
     <section class="preview-card">
       <div class="preview-head">
         <h2>Markdown 预览</h2>
         <div class="preview-actions">
-          <button type="button" id="btnRefreshPage" class="btn btn-xs btn-ghost">重新抓取</button>
+          <button type="button" id="btnRefreshPage" class="btn btn-xs btn-ghost">重新读取</button>
           <button type="button" id="btnLoadSample" class="btn btn-xs btn-secondary">载入示例</button>
         </div>
       </div>
-      <pre id="markdownPreview" class="md-preview">正在检测当前标签页中的 AI 对话...</pre>
+      <pre id="markdownPreview" class="md-preview">正在读取当前标签页中的 DeepSeek 对话...</pre>
     </section>
 
     <footer class="support-bar" id="supportBar">
@@ -104,7 +109,7 @@
         <button type="button" id="btnCloseCoffee" class="modal-close" aria-label="关闭弹窗">×</button>
       </div>
       <p class="modal-desc">
-        ChatVault 坚持 100% 本地离线、零水印、零登录墙与零外部请求。如果它帮你无损保存了重要对话与公式，欢迎微信扫码请作者喝杯咖啡。
+        ChatVault 在本地运行，不上传对话、不加水印、不需要登录。如果它帮你存下了重要的对话，欢迎微信扫码请作者喝杯咖啡。
       </p>
       <div class="modal-qr-wrap">
         <img src="assets/wechat-coffee-light.png" alt="若言(*帆) 微信赞赏码" class="modal-qr-img" />

@@ -654,32 +654,18 @@
     return [];
   }
 
-  function extractGeneric(doc) {
-    const candidates = safeQueryAll(
-      doc,
-      "[data-role], [data-author], .chat-message, .message, article, [role='listitem']"
-    );
-    // Keep only outermost candidate elements so nested messages don't duplicate
-    const topLevel = candidates.filter((el) => !candidates.some((other) => other !== el && other.contains(el)));
-    if (topLevel.length) {
-      return topLevel.map((el, idx) => {
-        const roleAttr = (getAttr(el, "data-role") || getAttr(el, "data-author") || "").toLowerCase();
-        let role = "assistant";
-        if (roleAttr === "user" || roleAttr === "human" || getClassName(el).toLowerCase().includes("user")) {
-          role = "user";
-        } else if (!roleAttr && idx % 2 === 0 && !getClassName(el).toLowerCase().includes("assistant")) {
-          role = "user";
-        }
-        return extractMessageFromElement(el, role);
-      }).filter((m) => m.content || m.reasoning);
-    }
+  const EXTRACTOR_VERSION = "1.1.0";
+  const SUPPORTED_PLATFORMS = new Set(["deepseek"]);
 
-    const rootEl = safeQuery(doc, "main") || doc.body;
-    if (!rootEl) return [];
-    const fallback = extractMessageFromElement(rootEl, "assistant");
-    return fallback.content || fallback.reasoning ? [fallback] : [];
+  function isSupportedPlatform(platform) {
+    return SUPPORTED_PLATFORMS.has(platform);
   }
 
+  /**
+   * Read the conversation currently present in the DOM.
+   * Only DeepSeek is supported; every other page reports `unsupported` instead of guessing.
+   * When nothing is found we return an explicit `not_found` status, never the whole page body.
+   */
   function extractConversation(doc, options) {
     const opts = options || {};
     const url = opts.url || (doc && doc.location ? doc.location.href : "") || "";
@@ -687,13 +673,12 @@
     const title = cleanTitle(opts.title || (doc && doc.title ? doc.title : ""), platform);
 
     let messages = [];
-    if (platform === "chatgpt") messages = extractChatGPT(doc);
-    else if (platform === "deepseek") messages = extractDeepSeek(doc);
-    else if (platform === "claude") messages = extractClaude(doc);
-    else if (platform === "gemini") messages = extractGemini(doc);
-
-    if (!messages.length) {
-      messages = extractGeneric(doc);
+    let status = "not_found";
+    if (!isSupportedPlatform(platform)) {
+      status = "unsupported";
+    } else {
+      messages = extractDeepSeek(doc);
+      status = messages.length ? "current_range" : "not_found";
     }
 
     let reasoningCount = 0;
@@ -706,7 +691,7 @@
       return {
         index: idx + 1,
         role: m.role,
-        content: m.content,
+        content: m.content || "",
         reasoning: m.reasoning || ""
       };
     });
@@ -723,88 +708,233 @@
         reasoningCount,
         formulaCount,
         codeBlockCount
+      },
+      completeness: {
+        status,
+        method: "single_snapshot",
+        reasons: status === "current_range" ? ["只读取了页面当前已加载的消息，未做滚动校验"] : [],
+        extractorVersion: EXTRACTOR_VERSION
       }
     };
   }
 
-  function messageSignature(msg) {
-    const head = (msg.content || "").slice(0, 120);
-    const rHead = (msg.reasoning || "").slice(0, 80);
-    return `${msg.role}::${head}::${rHead}`;
+  // Full-content identity. Repeated identical messages stay distinct because stitching is positional.
+  function messageKey(msg) {
+    return `${msg.role}\u0000${msg.content || ""}\u0000${msg.reasoning || ""}`;
   }
 
-  async function scrollCollectMessages(doc, win, options) {
-    const opts = options || {};
-    const settleMs = typeof opts.settleMs === "number" ? opts.settleMs : 60;
-    const maxSteps = typeof opts.maxSteps === "number" ? opts.maxSteps : 36;
+  /**
+   * Append a newly read window to the accumulated sequence.
+   * The window must overlap the accumulated tail by exactly one verifiable length,
+   * otherwise we refuse to guess (gap or ambiguous alignment).
+   */
+  function stitchWindow(acc, win) {
+    if (!win.length) return { ok: true, merged: acc, added: 0, overlap: 0 };
+    if (!acc.length) return { ok: true, merged: win.slice(), added: win.length, overlap: 0 };
 
-    const first = extractConversation(doc, opts);
-    if (!win || typeof doc.querySelectorAll !== "function") {
-      return first;
+    const accKeys = acc.map(messageKey);
+    const winKeys = win.map(messageKey);
+    const maxK = Math.min(accKeys.length, winKeys.length);
+    const candidates = [];
+    for (let k = maxK; k >= 1; k -= 1) {
+      let equal = true;
+      for (let i = 0; i < k; i += 1) {
+        if (accKeys[accKeys.length - k + i] !== winKeys[i]) {
+          equal = false;
+          break;
+        }
+      }
+      if (equal) candidates.push(k);
     }
 
-    // Find tallest scrollable container or document scrollingElement
+    if (!candidates.length) {
+      return { ok: false, reason: "gap", merged: acc, added: 0, overlap: 0 };
+    }
+    // Several overlap lengths fit only when identical messages repeat at the boundary.
+    // If they would all produce the same appended tail it does not matter; otherwise it is ambiguous.
+    const tails = new Set(candidates.map((k) => winKeys.slice(k).join("\u0001")));
+    const lengths = new Set(candidates.map((k) => win.length - k));
+    if (candidates.length > 1 && (tails.size > 1 || lengths.size > 1)) {
+      return { ok: false, reason: "ambiguous", merged: acc, added: 0, overlap: candidates[0] };
+    }
+    const k = candidates[0];
+    const added = win.slice(k);
+    return { ok: true, merged: acc.concat(added), added: added.length, overlap: k };
+  }
+
+  function sameSequence(a, b) {
+    if (a.length !== b.length) return false;
+    for (let i = 0; i < a.length; i += 1) {
+      if (messageKey(a[i]) !== messageKey(b[i])) return false;
+    }
+    return true;
+  }
+
+  function findScroller(doc) {
     let scroller = doc.scrollingElement || doc.documentElement;
-    const allContainers = safeQueryAll(doc, "main, [class*='scroll'], [class*='overflow-y-auto'], [style*='overflow']");
     let bestHeight = scroller ? scroller.scrollHeight || 0 : 0;
-    for (const c of allContainers) {
+    const containers = safeQueryAll(doc, "main, [class*='scroll'], [class*='overflow-y-auto'], [style*='overflow']");
+    for (const c of containers) {
       if ((c.scrollHeight || 0) > (c.clientHeight || 0) + 120 && (c.scrollHeight || 0) > bestHeight * 0.4) {
         scroller = c;
         bestHeight = c.scrollHeight;
       }
     }
+    return scroller;
+  }
 
-    if (!scroller || (scroller.scrollHeight || 0) <= (scroller.clientHeight || 0) + 120) {
-      return first;
-    }
+  function sleep(ms) {
+    return ms > 0 ? new Promise((resolve) => setTimeout(resolve, ms)) : Promise.resolve();
+  }
 
-    const originalTop = scroller.scrollTop || 0;
-    const totalHeight = scroller.scrollHeight || 0;
-    const step = Math.max(320, Math.floor((scroller.clientHeight || 600) * 0.8));
+  /**
+   * Scroll from the very top to the bottom, stitching each rendered window onto the previous one.
+   * Result carries an explicit completeness verdict:
+   * - complete: top was stable, bottom reached, every window joined by a unique overlap
+   * - partial: anything that prevents proving the above (reasons listed)
+   * - not_found / unsupported: nothing trustworthy to export
+   */
+  async function scrollCollectMessages(doc, win, options) {
+    const opts = options || {};
+    const settleMs = typeof opts.settleMs === "number" ? opts.settleMs : 220;
+    const maxSteps = typeof opts.maxSteps === "number" ? opts.maxSteps : 400;
+    const maxTopTries = typeof opts.maxTopTries === "number" ? opts.maxTopTries : 8;
+    const read = typeof opts.extract === "function" ? opts.extract : (d) => extractConversation(d, opts);
 
-    const ordered = [];
-    const seen = new Map();
+    const first = read(doc);
+    const base = first.completeness ? first.completeness.status : "not_found";
+    if (base === "unsupported") return first;
 
-    function mergeSnapshot(conv) {
-      for (const msg of conv.messages) {
-        const sig = messageSignature(msg);
-        if (!seen.has(sig)) {
-          seen.set(sig, ordered.length);
-          ordered.push(msg);
-        } else {
-          // Keep richer version if virtual scroll finished hydrating content
-          const existingIdx = seen.get(sig);
-          const prev = ordered[existingIdx];
-          if ((msg.content.length + msg.reasoning.length) > (prev.content.length + prev.reasoning.length)) {
-            ordered[existingIdx] = msg;
-          }
+    const scroller = opts.scroller || (win && doc && typeof doc.querySelectorAll === "function" ? findScroller(doc) : null);
+    const scrollable = Boolean(
+      scroller && (scroller.scrollHeight || 0) > (scroller.clientHeight || 0) + 2
+    );
+
+    if (!scrollable) {
+      if (!first.messages.length) return first;
+      return {
+        ...first,
+        completeness: {
+          status: "complete",
+          method: "single_snapshot",
+          reasons: [],
+          reachedTop: true,
+          reachedBottom: true,
+          windows: 1,
+          extractorVersion: EXTRACTOR_VERSION
         }
-      }
+      };
     }
 
-    mergeSnapshot(first);
+    const reasons = [];
+    const originalTop = scroller.scrollTop || 0;
+    let acc = [];
+    let windows = 0;
+    let reachedTop = false;
+    let reachedBottom = false;
+    let stoppedEarly = false;
+    let prevWindow = null;
+    const stableRead = async () => {
+      let last = read(doc);
+      for (let i = 0; i < 2; i += 1) {
+        await sleep(settleMs > 0 ? Math.max(40, Math.floor(settleMs / 2)) : 0);
+        const again = read(doc);
+        if (sameSequence(again.messages, last.messages)) return again;
+        last = again;
+      }
+      return last;
+    };
 
     try {
-      let y = 0;
-      for (let i = 0; i < maxSteps && y <= totalHeight; i += 1) {
-        scroller.scrollTop = y;
-        if (settleMs > 0) {
-          await new Promise((resolve) => setTimeout(resolve, settleMs));
-        }
-        mergeSnapshot(extractConversation(doc, opts));
-        if (y + (scroller.clientHeight || 600) >= (scroller.scrollHeight || totalHeight)) {
+      // 1) Go to the top and wait until older history stops loading.
+      let prevHeight = -1;
+      for (let t = 0; t < maxTopTries; t += 1) {
+        scroller.scrollTop = 0;
+        await sleep(settleMs);
+        const h = scroller.scrollHeight || 0;
+        if ((scroller.scrollTop || 0) <= 1 && h === prevHeight) {
+          reachedTop = true;
           break;
         }
-        y += step;
+        prevHeight = h;
+      }
+      if (!reachedTop) reasons.push("顶部仍在加载更早的消息，无法确认已到对话开头");
+
+      // 2) Walk down one viewport at a time.
+      const step = Math.max(200, Math.floor((scroller.clientHeight || 600) * 0.7));
+      let steps = 0;
+      while (steps < maxSteps) {
+        const snap = await stableRead();
+        windows += 1;
+        // Identical consecutive windows carry no new information (e.g. the page renders everything).
+        const res = prevWindow && sameSequence(snap.messages, prevWindow)
+          ? { ok: true, merged: acc, added: 0, overlap: snap.messages.length }
+          : stitchWindow(acc, snap.messages);
+        prevWindow = snap.messages;
+        if (!res.ok) {
+          stoppedEarly = true;
+          reasons.push(
+            res.reason === "ambiguous"
+              ? `第 ${acc.length} 条之后出现内容相同的相邻消息，无法唯一确定衔接位置，已停止拼接`
+              : `第 ${acc.length} 条之后与下一屏没有可验证的重叠，可能存在缺口，已停止拼接`
+          );
+          break;
+        }
+        acc = res.merged;
+        const top = scroller.scrollTop || 0;
+        const atBottom = top + (scroller.clientHeight || 0) >= (scroller.scrollHeight || 0) - 2;
+        if (atBottom) {
+          reachedBottom = true;
+          break;
+        }
+        scroller.scrollTop = top + step;
+        await sleep(settleMs);
+        if ((scroller.scrollTop || 0) <= top) {
+          // Could not move further although not at the bottom.
+          reasons.push("页面无法继续向下滚动，未读到对话末尾");
+          break;
+        }
+        steps += 1;
+      }
+      if (!reachedBottom && !stoppedEarly && steps >= maxSteps) {
+        reasons.push(`滚动达到 ${maxSteps} 屏上限，未读到对话末尾`);
       }
     } finally {
       scroller.scrollTop = originalTop;
     }
 
-    const finalMessages = ordered.map((m, idx) => ({
+    // Prefer the plain snapshot when the page renders everything at once and both reads agree.
+    let messages = acc;
+    let method = "scroll_stitch";
+    if (sameSequence(acc, first.messages)) {
+      messages = first.messages;
+      method = "single_snapshot_verified";
+    } else if (acc.length < first.messages.length && reachedBottom && !stoppedEarly) {
+      reasons.push("滚动拼接得到的消息少于页面初始读取，结果不一致");
+    }
+
+    if (!messages.length) {
+      return {
+        ...first,
+        messages: [],
+        stats: { ...first.stats, messageCount: 0, reasoningCount: 0 },
+        completeness: {
+          status: "not_found",
+          method,
+          reasons,
+          reachedTop,
+          reachedBottom,
+          windows,
+          extractorVersion: EXTRACTOR_VERSION
+        }
+      };
+    }
+
+    const status = reachedTop && reachedBottom && !stoppedEarly && reasons.length === 0 ? "complete" : "partial";
+    const finalMessages = messages.map((m, idx) => ({
       index: idx + 1,
       role: m.role,
-      content: m.content,
+      content: m.content || "",
       reasoning: m.reasoning || ""
     }));
 
@@ -815,16 +945,28 @@
         ...first.stats,
         messageCount: finalMessages.length,
         reasoningCount: finalMessages.filter((m) => Boolean(m.reasoning)).length
+      },
+      completeness: {
+        status,
+        method,
+        reasons,
+        reachedTop,
+        reachedBottom,
+        windows,
+        extractorVersion: EXTRACTOR_VERSION
       }
     };
   }
 
   return {
     PLATFORM_LABELS,
+    EXTRACTOR_VERSION,
     detectPlatform,
+    isSupportedPlatform,
     cleanTitle,
     extractConversation,
     scrollCollectMessages,
+    stitchWindow,
     normalizeMarkdown,
     splitLiteralThinkTags
   };

@@ -1,6 +1,7 @@
+// Real Chromium end-to-end check for ChatVault 1.1.0 (DeepSeek only).
+// Run: NODE_PATH=<dir containing playwright> node tests/e2e.spec.mjs
 import assert from "node:assert/strict";
 import fs from "node:fs";
-import http from "node:http";
 import os from "node:os";
 import path from "node:path";
 import { execFileSync } from "node:child_process";
@@ -11,171 +12,130 @@ const require = createRequire(import.meta.url);
 const { chromium } = require("playwright");
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const ROOT = path.resolve(__dirname, "..");
-const ZIP_PATH = path.join(ROOT, "dist", "chatvault-extension-v1.0.0.zip");
+const VERSION = JSON.parse(fs.readFileSync(path.join(ROOT, "manifest.json"), "utf8")).version;
+const ZIP_PATH = path.join(ROOT, "dist", `chatvault-extension-v${VERSION}.zip`);
 
-const FIXTURES = {
-  deepseek: `<!DOCTYPE html>
-<html lang="zh-CN">
-<head><meta charset="UTF-8"><title>DeepSeek Softmax Test - DeepSeek</title></head>
-<body>
-  <div class="ds-message" data-ds-role="user">
-    <div class="fbb737a4">请推导数值稳定 Softmax 并给出 Python 函数</div>
-  </div>
-  <div class="ds-message" data-ds-role="assistant">
-    <div class="ds-think-content">
-      <p>首先解释减去最大值 m 的数学意义。</p>
-    </div>
-    <div class="ds-markdown">
-      <p>令 <span class="katex"><span class="katex-mathml"><math><semantics><annotation encoding="application/x-tex">m = \\max_j z_j</annotation></semantics></math></span><span class="katex-html" aria-hidden="true">m=max z</span></span>：</p>
-      <span class="katex-display"><span class="katex"><span class="katex-mathml"><math><semantics><annotation encoding="application/x-tex">\\text{Softmax}(z_i) = \\frac{e^{z_i - m}}{\\sum_j e^{z_j - m}}</annotation></semantics></math></span><span class="katex-html">visual</span></span></span>
-      <div class="code-box"><div class="code-header"><span>python</span><button>复制代码</button></div><pre><code class="language-python">def stable_softmax(logits):
+const BASIC = `<!DOCTYPE html><html lang="zh-CN"><head><meta charset="UTF-8"><title>DeepSeek Softmax Test - DeepSeek</title></head><body>
+<div class="ds-message" data-ds-role="user"><div class="fbb737a4">请推导数值稳定 Softmax 并给出 Python 函数</div></div>
+<div class="ds-message" data-ds-role="assistant">
+  <div class="ds-think-content"><p>首先解释减去最大值 m 的数学意义。</p></div>
+  <div class="ds-markdown">
+    <p>令 <span class="katex"><span class="katex-mathml"><math><semantics><annotation encoding="application/x-tex">m = \\max_j z_j</annotation></semantics></math></span><span class="katex-html" aria-hidden="true">m=max z</span></span>：</p>
+    <div class="code-box"><div class="code-header"><span>python</span><button>复制代码</button></div><pre><code class="language-python">def stable_softmax(logits):
     return logits</code></pre></div>
-    </div>
   </div>
-</body>
-</html>`,
-  chatgpt: `<!DOCTYPE html>
-<html lang="en">
-<head><meta charset="UTF-8"><title>SQL Index Guide - ChatGPT</title></head>
-<body>
-  <article data-testid="conversation-turn-1">
-    <div data-message-author-role="user"><div class="whitespace-pre-wrap">Compare B-Tree and Hash index.</div></div>
-  </article>
-  <article data-testid="conversation-turn-2">
-    <details data-testid="thought-panel"><summary>Thought for 3s</summary><p>Focus on range queries.</p></details>
-    <div data-message-author-role="assistant">
-      <div class="markdown">
-        <table><tr><th>Index</th><th>Range</th></tr><tr><td>B-Tree</td><td>Yes</td></tr></table>
-        <pre><code class="language-sql">SELECT * FROM orders WHERE id &gt; 10;</code></pre>
-      </div>
-    </div>
-  </article>
-</body>
-</html>`,
-  claude: `<!DOCTYPE html>
-<html lang="en">
-<head><meta charset="UTF-8"><title>TS Result Pattern - Claude</title></head>
-<body>
-  <div data-testid="user-message">Write a Result type in TypeScript.</div>
-  <div data-testid="assistant-message">
-    <div data-testid="thinking-block">Use a discriminated union for exhaustive narrowing.</div>
-    <pre data-language="ts"><code>export type Result&lt;T&gt; = { ok: true; value: T } | { ok: false; error: string };</code></pre>
-  </div>
-</body>
-</html>`
-};
+</div></body></html>`;
 
-const MOCK_ORIGINS = new Map([
-  ["https://chat.deepseek.com/a/chat/s/test-1", FIXTURES.deepseek],
-  ["https://chatgpt.com/c/test-1", FIXTURES.chatgpt],
-  ["https://claude.ai/chat/test-1", FIXTURES.claude]
-]);
+const EXPIRED = `<!DOCTYPE html><html><head><meta charset="UTF-8"><title>DeepSeek</title></head><body><main><div class="error">分享链接已失效或不存在，请返回首页。</div><p>这里有很多文字但没有任何对话节点。</p></main></body></html>`;
 
-function startDocsServer() {
-  const server = http.createServer((req, res) => {
-    const reqPath = (req.url || "/").split("?")[0];
-    const map = {
-      "/": path.join(ROOT, "docs", "index.html"),
-      "/index.html": path.join(ROOT, "docs", "index.html"),
-      "/privacy.html": path.join(ROOT, "docs", "privacy.html"),
-      "/style.css": path.join(ROOT, "docs", "style.css"),
-      "/app.js": path.join(ROOT, "docs", "app.js"),
-      "/assets/wechat-coffee-light.png": path.join(ROOT, "docs", "assets", "wechat-coffee-light.png")
-    };
-    const filePath = map[reqPath];
-    if (!filePath || !fs.existsSync(filePath)) {
-      res.writeHead(404);
-      res.end("Not Found");
-      return;
-    }
-    const ext = path.extname(filePath);
-    const mime =
-      ext === ".html"
-        ? "text/html; charset=utf-8"
-        : ext === ".css"
-          ? "text/css; charset=utf-8"
-          : ext === ".js"
-            ? "application/javascript; charset=utf-8"
-            : "image/png";
-    res.writeHead(200, { "Content-Type": mime });
-    res.end(fs.readFileSync(filePath));
-  });
-  return new Promise((resolve) => {
-    server.listen(0, "127.0.0.1", () => {
-      const addr = server.address();
-      resolve({ server, baseUrl: `http://127.0.0.1:${addr.port}` });
-    });
+// Same generator as the unit tests: 120 messages, repeated "继续" user turns and assistant replies sharing a long prefix.
+function conversation(n) {
+  const msgs = [];
+  for (let i = 0; i < n; i += 1) {
+    const role = i % 2 === 0 ? "user" : "assistant";
+    let content = role === "user" ? `问题 ${i}` : `回答 ${i}：${"长文本".repeat((i % 7) + 1)}`;
+    if (role === "user" && i % 10 === 4) content = "继续";
+    if (role === "assistant" && i % 12 === 5) content = `${"同一段开头".repeat(30)} 结尾不同 ${i}`;
+    msgs.push({ role, content, h: 90 + (i % 5) * 40 });
+  }
+  return msgs;
+}
+const LONG_MSGS = conversation(120);
+
+// A real virtualized list: only rows intersecting the viewport exist in the DOM.
+const VIRTUAL = `<!DOCTYPE html><html lang="zh-CN"><head><meta charset="UTF-8"><title>Long Virtual Chat - DeepSeek</title>
+<style>body{margin:0}#scroller{height:600px;overflow-y:auto;position:relative}#spacer{position:relative}.ds-message{position:absolute;left:0;right:0;overflow:hidden}</style></head>
+<body><main id="scroller" class="scroll-area"><div id="spacer"></div></main>
+<script>
+const msgs = ${JSON.stringify(LONG_MSGS)};
+const scroller = document.getElementById("scroller");
+const spacer = document.getElementById("spacer");
+const tops = []; let y = 0;
+for (const m of msgs) { tops.push(y); y += m.h; }
+spacer.style.height = y + "px";
+function render() {
+  const st = scroller.scrollTop, vh = scroller.clientHeight;
+  spacer.textContent = "";
+  msgs.forEach((m, i) => {
+    if (tops[i] + m.h <= st || tops[i] >= st + vh) return;
+    const row = document.createElement("div");
+    row.className = "ds-message";
+    row.setAttribute("data-ds-role", m.role);
+    row.style.top = tops[i] + "px";
+    row.style.height = m.h + "px";
+    const inner = document.createElement("div");
+    inner.className = m.role === "user" ? "fbb737a4" : "ds-markdown";
+    const p = document.createElement(m.role === "user" ? "span" : "p");
+    p.textContent = m.content;
+    inner.appendChild(p);
+    row.appendChild(inner);
+    spacer.appendChild(row);
   });
 }
+scroller.addEventListener("scroll", render);
+render();
+const start = location.hash.slice(1);
+if (start === "middle") scroller.scrollTop = y / 2;
+if (start === "bottom") scroller.scrollTop = y;
+</script></body></html>`;
+
+const ROUTES = new Map([
+  ["https://chat.deepseek.com/a/chat/s/basic", BASIC],
+  ["https://chat.deepseek.com/share/expired", EXPIRED],
+  ["https://chat.deepseek.com/a/chat/s/long", VIRTUAL],
+  ["https://chatgpt.com/c/not-supported", BASIC]
+]);
 
 async function run() {
+  execFileSync("bash", [path.join(ROOT, "scripts", "package.sh")], { stdio: "ignore" });
   assert.ok(fs.existsSync(ZIP_PATH), `Release zip missing: ${ZIP_PATH}`);
-
+  const listing = execFileSync("unzip", ["-Z1", ZIP_PATH]).toString().trim().split("\n");
   const tmpRoot = fs.mkdtempSync(path.join(os.tmpdir(), "chatvault-e2e-"));
   const extDir = path.join(tmpRoot, "ext");
-  const userDataDir = fs.mkdtempSync(path.join(os.tmpdir(), "chatvault-prof-"));
-  const downloadDir = path.join(tmpRoot, "downloads");
+  const userDataDir = path.join(tmpRoot, "profile");
   fs.mkdirSync(extDir, { recursive: true });
-  fs.mkdirSync(downloadDir, { recursive: true });
-
   execFileSync("unzip", ["-q", ZIP_PATH, "-d", extDir]);
-  assert.ok(fs.existsSync(path.join(extDir, "manifest.json")), "manifest.json missing in zip");
-
-  const { server, baseUrl } = await startDocsServer();
-  const context = await chromium.launchPersistentContext(userDataDir, {
-    channel: "chromium",
-    headless: true,
-    acceptDownloads: true,
-    downloadsPath: downloadDir,
-    args: [`--disable-extensions-except=${extDir}`, `--load-extension=${extDir}`]
-  });
 
   let passed = 0;
   async function check(name, fn) {
     await fn();
     passed += 1;
-    console.log(`PASS: ${name}`);
+    console.log(`PASS ${name}`);
   }
 
-  try {
-    const consoleErrors = [];
-    const pageErrors = [];
-    const externalRequests = [];
-
-    function attachListeners(p, label) {
-      p.on("console", (msg) => {
-        if (msg.type() === "error") consoleErrors.push(`${label}: ${msg.text()}`);
-      });
-      p.on("pageerror", (err) => pageErrors.push(`${label}: ${String(err)}`));
-      p.on("request", (req) => {
-        const u = req.url();
-        if (
-          !MOCK_ORIGINS.has(u) &&
-          !u.startsWith("http://127.0.0.1") &&
-          !u.startsWith("chrome-extension://") &&
-          !u.startsWith("chrome://") &&
-          !u.startsWith("data:") &&
-          !u.startsWith("blob:")
-        ) {
-          externalRequests.push(`${label}: ${u}`);
-        }
-      });
+  await check("zip contains runtime files only (no print, tests, docs, store assets)", async () => {
+    for (const bad of [/^print/, /^tests\//, /^docs\//, /^store-assets\//, /^xhs-editorial-kit\//, /^dist\//, /print_clean/]) {
+      assert.ok(!listing.some((f) => bad.test(f)), `zip should not contain ${bad}: ${listing.join(", ")}`);
     }
+    for (const must of ["manifest.json", "popup.js", "content.js", "src/extractor/chat_extractor.js"]) {
+      assert.ok(listing.includes(must), `zip missing ${must}`);
+    }
+  });
 
-    // Intercept mock AI platform URLs locally (zero external traffic)
-    await context.route("**/*", (route) => {
-      const url = route.request().url();
-      if (MOCK_ORIGINS.has(url)) {
-        return route.fulfill({
-          status: 200,
-          contentType: "text/html; charset=utf-8",
-          body: MOCK_ORIGINS.get(url)
-        });
-      }
-      return route.continue();
+  const context = await chromium.launchPersistentContext(userDataDir, {
+    channel: "chromium",
+    headless: true,
+    args: [`--disable-extensions-except=${extDir}`, `--load-extension=${extDir}`]
+  });
+  const consoleErrors = [];
+  const pageErrors = [];
+  const external = [];
+  const watch = (p, label) => {
+    p.on("console", (m) => m.type() === "error" && consoleErrors.push(`${label}: ${m.text()}`));
+    p.on("pageerror", (e) => pageErrors.push(`${label}: ${e.message}`));
+    p.on("request", (r) => {
+      const u = r.url().split("#")[0];
+      if (!ROUTES.has(u) && !/^(chrome|chrome-extension|data|blob|about):/.test(u)) external.push(`${label}: ${u}`);
+    });
+  };
+
+  try {
+    await context.route(/^https?:\/\//, (route) => {
+      const u = route.request().url().split("#")[0];
+      if (ROUTES.has(u)) return route.fulfill({ status: 200, contentType: "text/html; charset=utf-8", body: ROUTES.get(u) });
+      return route.abort();
     });
 
-    // Discover loaded extension ID
     const extPage = await context.newPage();
     await extPage.goto("chrome://extensions/", { waitUntil: "domcontentloaded" });
     await extPage.waitForTimeout(300);
@@ -186,162 +146,119 @@ async function run() {
       return items[0] ? items[0].getAttribute("id") : null;
     });
     await extPage.close();
-    assert.ok(extensionId, "Extension ID must resolve in Headless Chrome");
+    assert.ok(extensionId, "extension id");
 
     const chatPage = await context.newPage();
-    attachListeners(chatPage, "chatPage");
-    const popupPage = await context.newPage();
-    attachListeners(popupPage, "popupPage");
-    await popupPage.goto(`chrome-extension://${extensionId}/popup.html`, { waitUntil: "load" });
+    watch(chatPage, "chat");
+    const popup = await context.newPage();
+    watch(popup, "popup");
+    await popup.goto(`chrome-extension://${extensionId}/popup.html`, { waitUntil: "load" });
+    await popup.waitForFunction(() => document.getElementById("statusPill").dataset.status !== "pending", null, { timeout: 10000 });
 
-    // 1. Test automatic content_scripts injection + extraction on DeepSeek, ChatGPT, Claude
-    for (const [url, expectedPlatform, checkFn] of [
-      [
-        "https://chat.deepseek.com/a/chat/s/test-1",
-        "deepseek",
-        (conv) => {
-          assert.match(conv.messages[1].reasoning, /减去最大值 m/);
-          assert.match(conv.messages[1].content, /\$m = \\max_j z_j\$/);
-          assert.match(conv.messages[1].content, /\\text\{Softmax\}/);
-          assert.match(conv.messages[1].content, /```python\ndef stable_softmax\(logits\):\n    return logits\n```/);
-        }
-      ],
-      [
-        "https://chatgpt.com/c/test-1",
-        "chatgpt",
-        (conv) => {
-          assert.match(conv.messages[1].reasoning, /Focus on range queries/);
-          assert.match(conv.messages[1].content, /\| Index \| Range \|/);
-          assert.match(conv.messages[1].content, /```sql\nSELECT \* FROM orders WHERE id > 10;\n```/);
-        }
-      ],
-      [
-        "https://claude.ai/chat/test-1",
-        "claude",
-        (conv) => {
-          assert.match(conv.messages[1].reasoning, /discriminated union/);
-          assert.match(conv.messages[1].content, /```ts\nexport type Result<T>/);
-        }
-      ]
-    ]) {
-      await chatPage.goto(url, { waitUntil: "load" });
-      await chatPage.waitForTimeout(200);
-      const res = await popupPage.evaluate(async () => {
-        const selfTab = await chrome.tabs.getCurrent();
-        const tabs = await chrome.tabs.query({});
-        const candidates = tabs.filter((x) => !selfTab || x.id !== selfTab.id);
-        for (let i = candidates.length - 1; i >= 0; i -= 1) {
-          const t = candidates[i];
+    await check("popup opened outside DeepSeek shows unsupported, no content, export disabled", async () => {
+      assert.equal(await popup.getAttribute("#statusPill", "data-status"), "unsupported");
+      assert.equal(await popup.isDisabled("#btnExportMd"), true);
+      assert.equal(await popup.isDisabled("#btnCopyMd"), true);
+      assert.equal(await popup.isDisabled("#btnExportJson"), true);
+      assert.doesNotMatch(await popup.textContent("#markdownPreview"), /^---/);
+    });
+
+    await popup.click("#btnLoadSample");
+    await check("built-in sample is preview-only (export stays disabled)", async () => {
+      assert.equal(await popup.getAttribute("#statusPill", "data-status"), "sample");
+      assert.equal(await popup.isDisabled("#btnExportMd"), true);
+      assert.match(await popup.textContent("#markdownPreview"), /^---\ntitle:/);
+    });
+
+    // Without the "tabs" permission tab.url is hidden, so ask every other tab and keep the first answer.
+    const ask = (scrollCollect) =>
+      popup.evaluate(async (scrollCollect) => {
+        const self = await chrome.tabs.getCurrent();
+        const tabs = (await chrome.tabs.query({})).filter((x) => !self || x.id !== self.id);
+        const errors = [];
+        for (const t of tabs) {
           const r = await new Promise((resolve) => {
-            chrome.tabs.sendMessage(t.id, { type: "CHATVAULT_EXTRACT", scrollCollect: false }, (resp) => {
-              if (chrome.runtime.lastError) {
-                resolve({ ok: false, error: chrome.runtime.lastError.message, tabId: t.id });
-                return;
-              }
-              resolve(resp);
+            chrome.tabs.sendMessage(t.id, { type: "CHATVAULT_EXTRACT", scrollCollect }, (resp) => {
+              if (chrome.runtime.lastError) resolve({ ok: false, error: chrome.runtime.lastError.message });
+              else resolve(resp);
             });
           });
           if (r && r.ok) return r;
+          errors.push(r && r.error);
         }
-        return { ok: false, error: "No tab responded to CHATVAULT_EXTRACT", count: candidates.length };
+        return { ok: false, error: errors.join(" | ") || "no tabs" };
+      }, scrollCollect);
+
+    await chatPage.goto("https://chat.deepseek.com/a/chat/s/basic", { waitUntil: "load" });
+    await chatPage.waitForTimeout(300);
+    const basic = await ask(true);
+    await check("DeepSeek basic page: complete, reasoning + LaTeX + code fence preserved", async () => {
+      assert.equal(basic.ok, true, JSON.stringify(basic));
+      const conv = basic.conversation;
+      assert.equal(conv.completeness.status, "complete");
+      assert.equal(conv.messages.length, 2);
+      assert.match(conv.messages[1].reasoning, /减去最大值 m/);
+      assert.match(conv.messages[1].content, /\$m = \\max_j z_j\$/);
+      assert.match(conv.messages[1].content, /```python\ndef stable_softmax\(logits\):\n    return logits\n```/);
+      const md = await popup.evaluate((c) => globalThis.ChatVaultExporter.formatConversationMarkdown(c, {}), conv);
+      assert.match(md, /export_status: "complete"/);
+      assert.match(md, /完整 · 2 条消息/);
+    });
+
+    await chatPage.goto("https://chat.deepseek.com/share/expired", { waitUntil: "load" });
+    await chatPage.waitForTimeout(300);
+    const expired = await ask(true);
+    await check("expired share page: not_found, zero messages (no whole-page fallback)", async () => {
+      assert.equal(expired.ok, true, JSON.stringify(expired));
+      assert.equal(expired.conversation.completeness.status, "not_found");
+      assert.equal(expired.conversation.messages.length, 0);
+    });
+
+    await chatPage.goto("https://chatgpt.com/c/not-supported", { waitUntil: "load" });
+    await chatPage.waitForTimeout(300);
+    const gpt = await ask(true);
+    await check("content script is not registered on non-DeepSeek sites", async () => {
+      assert.equal(gpt.ok, false, JSON.stringify(gpt));
+    });
+
+    const expected = LONG_MSGS.map((m) => `${m.role}:${m.content}`);
+    for (const start of ["bottom", "middle"]) {
+      await chatPage.goto(`https://chat.deepseek.com/a/chat/s/long#${start}`, { waitUntil: "load" });
+      await chatPage.waitForTimeout(400);
+      const before = await chatPage.evaluate(() => document.getElementById("scroller").scrollTop);
+      const rendered = await chatPage.evaluate(() => document.querySelectorAll(".ds-message").length);
+      const t0 = Date.now();
+      const long = await ask(true);
+      const after = await chatPage.evaluate(() => document.getElementById("scroller").scrollTop);
+      await check(`virtualized 120-message chat from ${start} (DOM shows ${rendered}): complete, exact order, duplicates kept, scroll restored`, async () => {
+        assert.equal(long.ok, true, JSON.stringify(long).slice(0, 300));
+        const conv = long.conversation;
+        assert.equal(conv.completeness.status, "complete", (conv.completeness.reasons || []).join("; "));
+        assert.equal(conv.messages.length, 120);
+        assert.deepEqual(conv.messages.map((m) => `${m.role}:${m.content}`), expected);
+        assert.ok(rendered < 20, `fixture must be virtualized, rendered=${rendered}`);
+        assert.equal(after, before);
+        console.log(`   (${start}: ${conv.completeness.windows} windows, ${Date.now() - t0} ms)`);
       });
 
-      await check(`MV3 content_script extracts ${expectedPlatform} fixture in Chromium`, async () => {
-        assert.equal(res.ok, true, JSON.stringify(res));
-        assert.equal(res.conversation.platform, expectedPlatform);
-        checkFn(res.conversation);
+      const quick = await ask(false);
+      await check(`scroll check OFF on virtualized chat from ${start}: labeled current_range, not complete`, async () => {
+        assert.equal(quick.conversation.completeness.status, "current_range");
+        assert.ok(quick.conversation.messages.length < 120);
+        const md = await popup.evaluate((c) => globalThis.ChatVaultExporter.formatConversationMarkdown(c, {}), quick.conversation);
+        assert.match(md, /ChatVault 提示：已读取当前范围/);
       });
     }
 
-    // 2. Test Popup UI: Load sample, download .md, toggle Reasoning OFF, download .json, Coffee modal + persistence
-    await popupPage.click("#btnLoadSample");
-    await check("Popup preview renders YAML frontmatter, <details> Reasoning, KaTeX, and python fence", async () => {
-      const txt = await popupPage.textContent("#markdownPreview");
-      assert.match(txt, /^---\ntitle:/);
-      assert.match(txt, /<details>\n<summary>Reasoning<\/summary>/);
-      assert.match(txt, /\\text\{Softmax\}/);
-      assert.match(txt, /```python/);
+    await check("zero console errors, page errors and external requests", async () => {
+      assert.deepEqual(consoleErrors, []);
+      assert.deepEqual(pageErrors, []);
+      assert.deepEqual(external, []);
     });
-
-    const [mdDownload] = await Promise.all([
-      popupPage.waitForEvent("download"),
-      popupPage.click("#btnExportMd")
-    ]);
-    const mdPath = path.join(downloadDir, mdDownload.suggestedFilename());
-    await mdDownload.saveAs(mdPath);
-    await check("Markdown .md file download contains intact formulas and zero watermarks", async () => {
-      assert.ok(mdDownload.suggestedFilename().endsWith(".md"));
-      const mdContent = fs.readFileSync(mdPath, "utf8");
-      assert.match(mdContent, /<details>\n<summary>Reasoning<\/summary>/);
-      assert.match(mdContent, /\$\$\n\\text\{Softmax\}/);
-    });
-
-    await popupPage.uncheck("#toggleReasoning");
-    const [jsonDownload] = await Promise.all([
-      popupPage.waitForEvent("download"),
-      popupPage.click("#btnExportJson")
-    ]);
-    const jsonPath = path.join(downloadDir, jsonDownload.suggestedFilename());
-    await jsonDownload.saveAs(jsonPath);
-    await check("JSON download strips reasoning when toggle is OFF", async () => {
-      assert.ok(jsonDownload.suggestedFilename().endsWith(".json"));
-      const parsed = JSON.parse(fs.readFileSync(jsonPath, "utf8"));
-      assert.equal(parsed.includeReasoning, false);
-      assert.equal(parsed.messages[1].reasoning, undefined);
-    });
-
-    await popupPage.click("#btnOpenCoffeeFooter");
-    await check("Coffee modal displays QR image cleanly", async () => {
-      assert.equal(await popupPage.isVisible("#coffeeModal"), true);
-      const qrWidth = await popupPage.evaluate(() => document.querySelector(".modal-qr-img").naturalWidth);
-      assert.ok(qrWidth > 100, `QR naturalWidth must be > 100, got ${qrWidth}`);
-    });
-    await popupPage.click("#btnCoffeeSupported");
-    await popupPage.reload({ waitUntil: "load" });
-    await check("Coffee support state persists in chrome.storage.local across popup reload", async () => {
-      assert.equal(await popupPage.isVisible("#btnReopenCoffee"), true);
-    });
-
-    // 3. Test Print PDF view
-    const printPage = await context.newPage();
-    attachListeners(printPage, "printPage");
-    await printPage.goto(`chrome-extension://${extensionId}/print.html`, { waitUntil: "load" });
-    await check("Clean print.html renders conversation with zero errors", async () => {
-      const title = await printPage.textContent("#docTitle");
-      assert.ok(title && title.length > 0);
-    });
-    await printPage.close();
-
-    // 4. Test Docs site over HTTP (index.html + privacy.html)
-    const docsPage = await context.newPage();
-    attachListeners(docsPage, "docsPage");
-    await docsPage.goto(`${baseUrl}/index.html`, { waitUntil: "load" });
-    await docsPage.selectOption("#demoPlatform", "claude");
-    await check("docs/index.html interactive demo switches platform and loads coffee QR", async () => {
-      const out = await docsPage.textContent("#demoOutputMd");
-      assert.match(out, /```ts/);
-      const qrWidth = await docsPage.evaluate(() => document.querySelector(".coffee-qr").naturalWidth);
-      assert.ok(qrWidth > 100);
-    });
-
-    await docsPage.goto(`${baseUrl}/privacy.html`, { waitUntil: "load" });
-    await check("docs/privacy.html loads cleanly", async () => {
-      const h1 = await docsPage.textContent("h1");
-      assert.match(h1, /ChatVault/);
-    });
-
-    await check("Zero console errors, zero page errors, zero external network requests", async () => {
-      assert.deepEqual(consoleErrors, [], `Console errors: ${consoleErrors.join("; ")}`);
-      assert.deepEqual(pageErrors, [], `Page errors: ${pageErrors.join("; ")}`);
-      assert.deepEqual(externalRequests, [], `External requests: ${externalRequests.join("; ")}`);
-    });
-
     console.log(`ALL E2E CHECKS PASSED: ${passed}`);
   } finally {
     await context.close();
-    server.close();
     fs.rmSync(tmpRoot, { recursive: true, force: true });
-    fs.rmSync(userDataDir, { recursive: true, force: true });
   }
 }
 
