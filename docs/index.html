@@ -1,0 +1,110 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>ChatVault — Local-First ChatGPT, DeepSeek &amp; Claude Exporter</title>
+  <link rel="stylesheet" href="style.css" />
+</head>
+<body>
+  <header class="hero">
+    <div class="container hero-inner">
+      <div class="badge-row">
+        <span class="pill pill-emerald">Manifest V3</span>
+        <span class="pill pill-blue">connect-src 'none' · 100% Local</span>
+        <span class="pill pill-amber">Zero Watermarks · $0 Forever</span>
+      </div>
+      <h1>ChatVault</h1>
+      <p class="subtitle">
+        无损导出 ChatGPT、DeepSeek、Claude 与 Gemini 对话为 Obsidian Markdown、JSON 与纯净 PDF。<br />
+        修复虚拟滚动长对话截断、DeepSeek <code>&lt;think&gt;</code> 错乱、KaTeX 公式丢失与导出水印。
+      </p>
+      <div class="hero-actions">
+        <a
+          class="btn btn-primary"
+          href="https://github.com/z121245017-ai/chatvault-extension/releases/download/v1.0.0/chatvault-extension-v1.0.0.zip"
+        >
+          下载 v1.0.0 扩展包 (.zip)
+        </a>
+        <a class="btn btn-secondary" href="#demo">在线交互演示</a>
+        <a class="btn btn-ghost" href="privacy.html">隐私承诺 (Privacy)</a>
+      </div>
+    </div>
+  </header>
+
+  <main class="container">
+    <section class="grid-features">
+      <article class="feature-card">
+        <h3>DeepSeek &lt;think&gt; 原生折叠</h3>
+        <p>自动识别思考过程，导出为 <code>&lt;details&gt;&lt;summary&gt;Reasoning&lt;/summary&gt;</code>，支持一键保留或剥离。</p>
+      </article>
+      <article class="feature-card">
+        <h3>KaTeX / MathJax LaTeX 还原</h3>
+        <p>直接读取 <code>&lt;annotation encoding="application/x-tex"&gt;</code>，完整保留 <code>$...$</code> 与 <code>$$...$$</code> 源码。</p>
+      </article>
+      <article class="feature-card">
+        <h3>防虚拟滚动截断 + 精确语言围栏</h3>
+        <p>内置长对话滚动采集与语言标签识别（<code>python</code> / <code>ts</code> / <code>sql</code>），表格与列表无损转换。</p>
+      </article>
+      <article class="feature-card">
+        <h3>纯净 PDF 打印 + Obsidian YAML</h3>
+        <p><code>@media print</code> 自动隐藏侧边栏与输入框，零水印另存为 PDF；可选写入 Obsidian / Notion Frontmatter。</p>
+      </article>
+    </section>
+
+    <section id="demo" class="demo-section">
+      <div class="demo-head">
+        <div>
+          <h2>离线格式化交互演示 (Live Local Demo)</h2>
+          <p>切换平台或修改选项，所有解析均在本地浏览器内完成，零网络请求。</p>
+        </div>
+        <div class="demo-controls">
+          <select id="demoPlatform" class="select">
+            <option value="deepseek">DeepSeek (&lt;think&gt; + KaTeX + Python)</option>
+            <option value="chatgpt">ChatGPT (o1 Thought + Table + SQL)</option>
+            <option value="claude">Claude (Thinking + TypeScript)</option>
+          </select>
+          <label class="check-label"><input type="checkbox" id="demoFrontmatter" checked /> YAML Frontmatter</label>
+          <label class="check-label"><input type="checkbox" id="demoReasoning" checked /> Include Reasoning</label>
+        </div>
+      </div>
+
+      <div class="demo-grid">
+        <div class="demo-pane">
+          <div class="pane-title">模拟原始 DOM 片段 (Input HTML)</div>
+          <pre id="demoInputHtml" class="code-box"></pre>
+        </div>
+        <div class="demo-pane">
+          <div class="pane-title">
+            <span>ChatVault 无损导出结果 (Output Markdown)</span>
+            <button type="button" id="demoDownloadMd" class="btn btn-xs btn-primary">下载 .md 示例</button>
+          </div>
+          <pre id="demoOutputMd" class="code-box"></pre>
+        </div>
+      </div>
+    </section>
+
+    <section class="coffee-section">
+      <div class="coffee-copy">
+        <span class="pill pill-emerald">SUPPORT / 支持维护</span>
+        <h2>免费、开源、零水印 —— 请作者喝杯咖啡 ☕</h2>
+        <p>
+          ChatVault 承诺永久免费、无登录墙、无外部追踪请求。如果这款扩展帮你省下了整理笔记与公式的时间，欢迎微信扫码请作者喝杯咖啡！
+        </p>
+      </div>
+      <div class="coffee-card-wrap">
+        <img src="assets/wechat-coffee-light.png" alt="若言(*帆) 微信赞赏码" class="coffee-qr" />
+      </div>
+    </section>
+  </main>
+
+  <footer class="footer">
+    <div class="container">
+      <span>ChatVault v1.0.0 · 100% Local-First · MIT License</span>
+      <a href="privacy.html">Privacy Policy</a>
+    </div>
+  </footer>
+
+  <script src="app.js"></script>
+</body>
+</html>

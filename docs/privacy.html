@@ -1,0 +1,41 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Privacy Policy — ChatVault</title>
+  <link rel="stylesheet" href="style.css" />
+</head>
+<body>
+  <main class="container" style="padding-top: 36px; padding-bottom: 48px;">
+    <a class="btn btn-ghost btn-xs" href="index.html">← 返回首页 (Back)</a>
+    <h1 style="margin-top: 16px;">ChatVault 隐私政策 / Privacy Policy</h1>
+    <p><strong>生效日期 / Effective Date:</strong> 2026-11-27</p>
+
+    <section class="feature-card" style="margin-bottom: 16px;">
+      <h3>1. 100% 本地离线处理 (Zero Network Requests)</h3>
+      <p>
+        ChatVault 扩展在 <code>manifest.json</code> 中严格声明 <code>connect-src 'none'</code>。
+        扩展代码不包含任何 <code>fetch</code>、<code>XMLHttpRequest</code>、<code>WebSocket</code> 或第三方埋点脚本。
+        您的对话正文、思考过程、LaTeX 公式与导出文件均仅在本地浏览器内存中生成并保存。
+      </p>
+    </section>
+
+    <section class="feature-card" style="margin-bottom: 16px;">
+      <h3>2. 最小权限说明 (Minimal Permissions)</h3>
+      <ul>
+        <li><code>activeTab</code>：仅在您主动点击扩展图标时读取当前活动标签页中的对话 DOM。</li>
+        <li><code>scripting</code>：仅在尚未挂载内容脚本的页面中按需注入本地解析器。</li>
+        <li><code>storage</code>：仅在本地 <code>chrome.storage.local</code> 保存您的导出开关偏好（Frontmatter / Reasoning 开关）与打印预览缓存。</li>
+      </ul>
+    </section>
+
+    <section class="feature-card">
+      <h3>3. 无账号、无水印、无数据收集 (No Accounts or Tracking)</h3>
+      <p>
+        ChatVault 不要求注册或登录，不读取 Cookie，不收集任何个人身份信息或浏览历史。
+      </p>
+    </section>
+  </main>
+</body>
+</html>

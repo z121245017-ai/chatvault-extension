@@ -1,0 +1,34 @@
+/* ChatVault clean @media print rules for AI chat pages (zero watermarks) */
+@media print {
+  html.chatvault-print-ready nav,
+  html.chatvault-print-ready aside,
+  html.chatvault-print-ready header,
+  html.chatvault-print-ready footer,
+  html.chatvault-print-ready form,
+  html.chatvault-print-ready textarea,
+  html.chatvault-print-ready [contenteditable="true"],
+  html.chatvault-print-ready [data-testid*="sidebar"],
+  html.chatvault-print-ready [data-testid*="composer"],
+  html.chatvault-print-ready [class*="sidebar"],
+  html.chatvault-print-ready [class*="composer"],
+  html.chatvault-print-ready .chatvault-hide-on-print {
+    display: none !important;
+  }
+
+  html.chatvault-print-ready body,
+  html.chatvault-print-ready main {
+    width: 100% !important;
+    max-width: 100% !important;
+    height: auto !important;
+    overflow: visible !important;
+    background: #ffffff !important;
+    color: #111827 !important;
+  }
+
+  html.chatvault-print-ready pre,
+  html.chatvault-print-ready blockquote,
+  html.chatvault-print-ready table {
+    break-inside: avoid;
+    page-break-inside: avoid;
+  }
+}

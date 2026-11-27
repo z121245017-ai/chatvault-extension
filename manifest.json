@@ -1,0 +1,51 @@
+{
+  "manifest_version": 3,
+  "name": "ChatVault - Export ChatGPT, DeepSeek & Claude to Markdown/PDF",
+  "short_name": "ChatVault",
+  "version": "1.0.0",
+  "description": "100% local-first exporter for ChatGPT, DeepSeek, Claude & Gemini. Preserves <think> blocks, KaTeX LaTeX & code fences with zero watermarks.",
+  "icons": {
+    "16": "icons/icon16.png",
+    "48": "icons/icon48.png",
+    "128": "icons/icon128.png"
+  },
+  "action": {
+    "default_popup": "popup.html",
+    "default_title": "ChatVault - AI 对话无损导出",
+    "default_icon": {
+      "16": "icons/icon16.png",
+      "48": "icons/icon48.png",
+      "128": "icons/icon128.png"
+    }
+  },
+  "permissions": [
+    "activeTab",
+    "scripting",
+    "storage"
+  ],
+  "content_scripts": [
+    {
+      "matches": [
+        "https://chatgpt.com/*",
+        "https://chat.openai.com/*",
+        "https://chat.deepseek.com/*",
+        "https://claude.ai/*",
+        "https://gemini.google.com/*",
+        "https://www.perplexity.ai/*",
+        "https://perplexity.ai/*"
+      ],
+      "js": [
+        "src/extractor/chat_extractor.js",
+        "src/formatter/markdown_exporter.js",
+        "content.js"
+      ],
+      "css": [
+        "src/print/print_clean.css"
+      ],
+      "run_at": "document_idle"
+    }
+  ],
+  "content_security_policy": {
+    "extension_pages": "default-src 'self'; script-src 'self'; style-src 'self'; img-src 'self' data: blob:; connect-src 'none'; object-src 'self';"
+  }
+}

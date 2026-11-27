@@ -1,0 +1,36 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>ChatVault Clean Print View</title>
+  <link rel="stylesheet" href="print.css" />
+</head>
+<body>
+  <div class="print-toolbar">
+    <div class="toolbar-info">
+      <strong>ChatVault 纯净 PDF 打印视图</strong>
+      <span>零水印 · 自动隐藏网页侧栏与输入框 · 支持浏览器“另存为 PDF”</span>
+    </div>
+    <div class="toolbar-actions">
+      <label class="inline-toggle">
+        <input type="checkbox" id="printIncludeReasoning" checked />
+        <span>包含思考过程</span>
+      </label>
+      <button type="button" id="btnTriggerPrint" class="btn-print">打印 / 另存为 PDF</button>
+    </div>
+  </div>
+
+  <main class="sheet">
+    <header class="doc-header">
+      <div class="doc-meta" id="docMeta"></div>
+      <h1 id="docTitle" class="doc-title">AI Conversation</h1>
+    </header>
+    <section id="docBody" class="doc-body"></section>
+  </main>
+
+  <script src="src/samples/builtin_sample.js"></script>
+  <script src="src/formatter/markdown_exporter.js"></script>
+  <script src="print.js"></script>
+</body>
+</html>

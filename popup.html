@@ -1,0 +1,124 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>ChatVault - AI 对话无损导出</title>
+  <link rel="stylesheet" href="popup.css" />
+</head>
+<body>
+  <div class="app">
+    <header class="header">
+      <div class="brand">
+        <img src="icons/icon48.png" alt="ChatVault" class="brand-icon" width="28" height="28" />
+        <div>
+          <h1 class="brand-title">ChatVault <span class="brand-tag">v1.0</span></h1>
+          <p class="brand-sub">ChatGPT · DeepSeek · Claude 无损导出</p>
+        </div>
+      </div>
+      <div class="header-actions">
+        <button type="button" id="btnOpenCoffeeTop" class="coffee-top-link" title="支持 ChatVault 免费持续维护">☕ 请作者喝咖啡</button>
+        <span class="privacy-pill" title="connect-src 'none' · 零外部请求">100% 本地</span>
+      </div>
+    </header>
+
+    <div id="statusBanner" class="status-banner is-hidden" role="status"></div>
+
+    <section class="summary-card">
+      <div class="summary-top">
+        <span id="platformBadge" class="platform-badge">检测中</span>
+        <span id="convTitle" class="conv-title" title="当前对话标题">等待读取对话...</span>
+      </div>
+      <div class="stats-row">
+        <span class="stat-chip" id="statMessages">0 条消息</span>
+        <span class="stat-chip" id="statReasoning">0 思考块</span>
+        <span class="stat-chip" id="statFormulas">0 公式</span>
+        <span class="stat-chip" id="statCode">0 代码块</span>
+      </div>
+    </section>
+
+    <section class="cta-panel">
+      <button type="button" id="btnExportMd" class="btn btn-primary btn-cta">
+        一键导出 Markdown
+      </button>
+      <div class="secondary-grid">
+        <button type="button" id="btnPrintPdf" class="btn btn-secondary">纯净 PDF 打印</button>
+        <button type="button" id="btnCopyMd" class="btn btn-ghost">复制 Markdown</button>
+        <button type="button" id="btnExportJson" class="btn btn-ghost">导出 JSON</button>
+      </div>
+    </section>
+
+    <section class="options-card">
+      <label class="toggle-row" for="toggleFrontmatter">
+        <span class="toggle-copy">
+          <strong>Obsidian YAML Frontmatter</strong>
+          <small>写入标题、来源平台、时间与标签元数据</small>
+        </span>
+        <input type="checkbox" id="toggleFrontmatter" checked />
+      </label>
+      <label class="toggle-row" for="toggleReasoning">
+        <span class="toggle-copy">
+          <strong>保留 DeepSeek 思考过程</strong>
+          <small>折叠为 &lt;details&gt;&lt;summary&gt;Reasoning&lt;/summary&gt; 块</small>
+        </span>
+        <input type="checkbox" id="toggleReasoning" checked />
+      </label>
+      <label class="toggle-row" for="toggleScrollCollect">
+        <span class="toggle-copy">
+          <strong>滚动全量采集长对话</strong>
+          <small>自动遍历虚拟滚动列表，防止长对话截断</small>
+        </span>
+        <input type="checkbox" id="toggleScrollCollect" checked />
+      </label>
+    </section>
+
+    <section class="preview-card">
+      <div class="preview-head">
+        <h2>Markdown 预览</h2>
+        <div class="preview-actions">
+          <button type="button" id="btnRefreshPage" class="btn btn-xs btn-ghost">重新抓取</button>
+          <button type="button" id="btnLoadSample" class="btn btn-xs btn-secondary">载入示例</button>
+        </div>
+      </div>
+      <pre id="markdownPreview" class="md-preview">正在检测当前标签页中的 AI 对话...</pre>
+    </section>
+
+    <footer class="support-bar" id="supportBar">
+      <div id="coffeeFooterCard" class="coffee-footer-card">
+        <div class="coffee-footer-text">
+          <span class="coffee-cup" aria-hidden="true">☕</span>
+          <span><strong>请作者喝咖啡</strong> · 支持免费持续维护</span>
+        </div>
+        <button type="button" id="btnOpenCoffeeFooter" class="btn btn-xs btn-emerald">支持</button>
+      </div>
+      <button type="button" id="btnReopenCoffee" class="coffee-thanks-pill is-hidden">
+        已收到支持 · 感谢请作者喝咖啡 ☕
+      </button>
+    </footer>
+  </div>
+
+  <div id="coffeeModal" class="modal-backdrop is-hidden" role="dialog" aria-modal="true" aria-labelledby="coffeeModalTitle">
+    <div class="modal-card">
+      <div class="modal-head">
+        <span id="coffeeModalTitle" class="modal-eyebrow">SUPPORT / 支持 ChatVault 持续维护</span>
+        <button type="button" id="btnCloseCoffee" class="modal-close" aria-label="关闭弹窗">×</button>
+      </div>
+      <p class="modal-desc">
+        ChatVault 坚持 100% 本地离线、零水印、零登录墙与零外部请求。如果它帮你无损保存了重要对话与公式，欢迎微信扫码请作者喝杯咖啡。
+      </p>
+      <div class="modal-qr-wrap">
+        <img src="assets/wechat-coffee-light.png" alt="若言(*帆) 微信赞赏码" class="modal-qr-img" />
+      </div>
+      <div class="modal-actions">
+        <button type="button" id="btnCoffeeLater" class="btn btn-ghost">以后再说</button>
+        <button type="button" id="btnCoffeeSupported" class="btn btn-emerald-solid">我已打赏</button>
+      </div>
+    </div>
+  </div>
+
+  <script src="src/samples/builtin_sample.js"></script>
+  <script src="src/extractor/chat_extractor.js"></script>
+  <script src="src/formatter/markdown_exporter.js"></script>
+  <script src="popup.js"></script>
+</body>
+</html>
